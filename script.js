@@ -2,15 +2,29 @@
 // 39's shrine — interactions
 // ===================================================
 
-document.addEventListener('DOMContentLoaded', () => {
-  initVisitorCounter();
-  initDraggableStickers();
-  initGuestbookForm();
-  initFakeWeather();
-  initSparkleOnClick();
-  initDoodleBoard();
-  initSongPlayer();
-});
+function initApp() {
+  const safeInit = (fn, name) => {
+    try {
+      fn();
+    } catch (err) {
+      console.error(`Error initializing ${name}:`, err);
+    }
+  };
+
+  safeInit(initVisitorCounter, 'VisitorCounter');
+  safeInit(initDraggableStickers, 'DraggableStickers');
+  safeInit(initGuestbookForm, 'GuestbookForm');
+  safeInit(initFakeWeather, 'FakeWeather');
+  safeInit(initSparkleOnClick, 'SparkleOnClick');
+  safeInit(initDoodleBoard, 'DoodleBoard');
+  safeInit(initSongPlayer, 'SongPlayer');
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
 
 /* ---------- visitor counter (persists via localStorage) ---------- */
 function initVisitorCounter() {
@@ -285,36 +299,38 @@ function initGuestbookForm() {
       submitBtn.textContent = 'signing... ♡';
     }
 
-    if (API_ENDPOINT) {
-      try {
-        const res = await fetch(API_ENDPOINT, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: nameVal, message: msgVal })
-        });
+    try {
+      if (API_ENDPOINT) {
+        try {
+          const res = await fetch(API_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: nameVal, message: msgVal })
+          });
 
-        const data = await res.json();
+          const data = await res.json();
 
-        if (res.ok && data.success) {
-          showMessage('thanks', 'thank you for signing! ♡');
-          form.reset();
+          if (res.ok && data.success) {
+            showMessage('thanks', 'thank you for signing! ♡');
+            form.reset();
 
-          if (data.entry) {
-            currentEntries.unshift(data.entry);
-            saveLocalBackup(currentEntries);
-            renderEntries(currentEntries);
+            if (data.entry) {
+              currentEntries.unshift(data.entry);
+              saveLocalBackup(currentEntries);
+              renderEntries(currentEntries);
+            } else {
+              await loadEntries();
+            }
+            return;
           } else {
-            await loadEntries();
+            showMessage('error', data.message || 'Could not sign guestbook. Please try again!');
+            return;
           }
-          return;
-        } else {
-          showMessage('error', data.message || 'Could not sign guestbook. Please try again!');
-          return;
+        } catch (err) {
+          console.warn('Backend unavailable, saving locally:', err);
         }
-      } catch (err) {
-        console.warn('Backend unavailable, saving locally:', err);
       }
-    }
+
       // Fallback: save locally so user action is never lost
       const newLocalEntry = {
         id: String(Date.now()),
