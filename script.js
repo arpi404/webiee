@@ -94,7 +94,7 @@ function initDraggableStickers() {
   });
 }
 
-/* ---------- guestbook with live backend persistence, auto-refresh & localStorage fallback ---------- */
+/* ---------- guestbook with Supabase Cloud DB, REST backend & localStorage fallback ---------- */
 function initGuestbookForm() {
   const form = document.getElementById('guestbook-form');
   const thanks = document.getElementById('gb-thanks');
@@ -109,7 +109,28 @@ function initGuestbookForm() {
 
   const STORAGE_KEY = 'mikuShrineGuestbookEntries';
 
-  // Base API url: supports configured remote backend (Render/Railway), localhost, or local server
+  // 1. Supabase Cloud Database Client (Direct GitHub Pages connection)
+  const supabaseUrl = (window.SUPABASE_URL || '').trim();
+  const supabaseKey = (window.SUPABASE_ANON_KEY || '').trim();
+  const hasSupabase = Boolean(
+    window.supabase &&
+    supabaseUrl &&
+    supabaseKey &&
+    supabaseUrl.startsWith('https://') &&
+    !supabaseUrl.includes('PASTE_')
+  );
+
+  let supabase = null;
+  if (hasSupabase) {
+    try {
+      supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+      console.log('🌸 Supabase Cloud Database initialized for Guestbook');
+    } catch (err) {
+      console.warn('Supabase initialization error:', err);
+    }
+  }
+
+  // 2. Base REST API endpoint (Node.js server e.g. Render / localhost)
   const configuredBackend = (window.BACKEND_API_URL || '').trim();
   const isLocalFile = window.location.protocol === 'file:';
   const isGitHubPages = window.location.hostname.endsWith('github.io');
@@ -145,7 +166,6 @@ function initGuestbookForm() {
       }
       let parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Filter out legacy fake entries ('1', '2', '3') if still in cache
         const filtered = parsed.filter(item => item && !['1', '2', '3'].includes(String(item.id)) && item.name !== 'miku_fan_39 ✧' && item.name !== 'stargirl ⋆.˚' && item.name !== 'arpii fanclub 🌸');
         const result = filtered.length > 0 ? filtered : defaultEntries;
         localStorage.setItem(STORAGE_KEY, JSON.stringify(result));
@@ -232,7 +252,19 @@ function initGuestbookForm() {
           saveLocalBackup(currentEntries);
         }
 
-        // Backend sync
+        // 1. Supabase like update
+        if (supabase) {
+          try {
+            await supabase
+              .from('guestbook')
+              .update({ likes: target.likes })
+              .eq('id', id);
+          } catch (err) {
+            console.warn('Supabase like error:', err);
+          }
+        }
+
+        // 2. Backend sync
         if (API_ENDPOINT) {
           try {
             const res = await fetch(`${API_ENDPOINT}/${id}/like`, { method: 'POST' });
@@ -252,8 +284,31 @@ function initGuestbookForm() {
     });
   }
 
-  // Fetch entries from backend server with graceful fallback
+  // Fetch entries from Supabase, backend server, or local storage
   async function loadEntries() {
+    // 1. Try Supabase Cloud Database (Highest priority)
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('guestbook')
+          .select('*')
+          .order('id', { ascending: false })
+          .limit(100);
+
+        if (!error && Array.isArray(data)) {
+          currentEntries = data;
+          saveLocalBackup(currentEntries);
+          renderEntries(currentEntries);
+          return;
+        } else if (error) {
+          console.warn('Supabase fetch notice:', error.message);
+        }
+      } catch (err) {
+        console.warn('Supabase connection error:', err);
+      }
+    }
+
+    // 2. Try REST backend server (Render / Express)
     if (API_ENDPOINT) {
       try {
         const res = await fetch(API_ENDPOINT, { cache: 'no-cache' });
@@ -271,6 +326,7 @@ function initGuestbookForm() {
       }
     }
 
+    // 3. Fallback to local backup
     currentEntries = loadLocalBackup();
     renderEntries(currentEntries);
   }
@@ -278,9 +334,23 @@ function initGuestbookForm() {
   // Initial load
   loadEntries();
 
-  // Polling every 15s to keep comments synced across visitors when connected to backend
+  // Supabase real-time subscription (instantly updates when anyone signs)
+  if (supabase) {
+    try {
+      supabase
+        .channel('public:guestbook')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'guestbook' }, () => {
+          loadEntries();
+        })
+        .subscribe();
+    } catch (e) {
+      console.warn('Realtime channel error:', e);
+    }
+  }
+
+  // Polling every 15s to keep comments synced across visitors when connected to backend or Supabase
   setInterval(() => {
-    if (document.visibilityState === 'visible' && API_ENDPOINT) {
+    if (document.visibilityState === 'visible' && (API_ENDPOINT || supabase)) {
       loadEntries();
     }
   }, 15000);
@@ -299,7 +369,48 @@ function initGuestbookForm() {
       submitBtn.textContent = 'signing... ♡';
     }
 
+    const dateStr = new Date().toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
     try {
+      // 1. Try Supabase Cloud Database (Direct GitHub Pages connection)
+      if (supabase) {
+        try {
+          const newEntryPayload = {
+            name: nameVal,
+            message: msgVal,
+            date: dateStr,
+            likes: 1
+          };
+
+          const { data, error } = await supabase
+            .from('guestbook')
+            .insert([newEntryPayload])
+            .select();
+
+          if (!error && data && data.length > 0) {
+            showMessage('thanks', 'thank you for signing! ♡');
+            form.reset();
+            currentEntries.unshift(data[0]);
+            saveLocalBackup(currentEntries);
+            renderEntries(currentEntries);
+            return;
+          } else if (error) {
+            console.error('Supabase insert error:', error);
+            showMessage('error', 'Database error: ' + (error.message || 'please try again'));
+            return;
+          }
+        } catch (err) {
+          console.warn('Supabase submission error:', err);
+        }
+      }
+
+      // 2. Try REST backend server (Render / Express)
       if (API_ENDPOINT) {
         try {
           const res = await fetch(API_ENDPOINT, {
@@ -331,18 +442,12 @@ function initGuestbookForm() {
         }
       }
 
-      // Fallback: save locally so user action is never lost
+      // 3. Fallback: save locally so user action is never lost
       const newLocalEntry = {
         id: String(Date.now()),
         name: nameVal,
         message: msgVal,
-        date: new Date().toLocaleString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        }),
+        date: dateStr,
         likes: 1
       };
 
@@ -350,7 +455,7 @@ function initGuestbookForm() {
       saveLocalBackup(currentEntries);
       renderEntries(currentEntries);
       form.reset();
-      showMessage('thanks', 'thank you for signing! ♡');
+      showMessage('thanks', 'thank you for signing! ♡ (saved locally)');
     } finally {
       if (submitBtn) {
         submitBtn.disabled = false;
