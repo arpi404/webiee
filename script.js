@@ -209,6 +209,23 @@ function initGuestbookForm() {
     }
   }
 
+  function formatDisplayDate(dateStr) {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      }
+    } catch (e) {}
+    return String(dateStr);
+  }
+
   function renderEntries(entries) {
     if (!entriesContainer) return;
     if (countEl) countEl.textContent = entries.length;
@@ -226,7 +243,7 @@ function initGuestbookForm() {
       entryEl.innerHTML = `
         <div class="gb-entry-header">
           <span class="gb-entry-name">★ ${escapeHTML(item.name)}</span>
-          <span class="gb-entry-date">${escapeHTML(item.date)}</span>
+          <span class="gb-entry-date">${escapeHTML(formatDisplayDate(item.date))}</span>
         </div>
         <div class="gb-entry-body">${escapeHTML(item.message)}</div>
         <div class="gb-entry-footer">
