@@ -109,7 +109,11 @@ function initGuestbookForm() {
 
   const STORAGE_KEY = 'mikuShrineGuestbookEntries';
 
-  // 1. Supabase Cloud Database Client (Direct GitHub Pages connection)
+  // 1. Google Sheets Web App (100% Lifetime Free forever on your Google Drive)
+  const googleSheetUrl = (window.GOOGLE_SHEET_URL || '').trim();
+  const hasGoogleSheet = Boolean(googleSheetUrl && googleSheetUrl.startsWith('https://script.google.com'));
+
+  // 2. Supabase Cloud Database Client (Optional alternative)
   const supabaseUrl = (window.SUPABASE_URL || '').trim();
   const supabaseKey = (window.SUPABASE_ANON_KEY || '').trim();
   const hasSupabase = Boolean(
@@ -130,7 +134,7 @@ function initGuestbookForm() {
     }
   }
 
-  // 2. Base REST API endpoint (Node.js server e.g. Render / localhost)
+  // 3. Base REST API endpoint (Node.js server e.g. Render / localhost)
   const configuredBackend = (window.BACKEND_API_URL || '').trim();
   const isLocalFile = window.location.protocol === 'file:';
   const isGitHubPages = window.location.hostname.endsWith('github.io');
@@ -252,7 +256,19 @@ function initGuestbookForm() {
           saveLocalBackup(currentEntries);
         }
 
-        // 1. Supabase like update
+        // 1. Google Sheets like update
+        if (hasGoogleSheet) {
+          try {
+            fetch(googleSheetUrl, {
+              method: 'POST',
+              mode: 'no-cors',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify({ action: 'like', id: id })
+            }).catch(e => {});
+          } catch (err) {}
+        }
+
+        // 2. Supabase like update
         if (supabase) {
           try {
             await supabase
@@ -264,7 +280,7 @@ function initGuestbookForm() {
           }
         }
 
-        // 2. Backend sync
+        // 3. Backend sync
         if (API_ENDPOINT) {
           try {
             const res = await fetch(`${API_ENDPOINT}/${id}/like`, { method: 'POST' });
@@ -284,9 +300,28 @@ function initGuestbookForm() {
     });
   }
 
-  // Fetch entries from Supabase, backend server, or local storage
+  // Fetch entries from Google Sheets, Supabase, backend server, or local storage
   async function loadEntries() {
-    // 1. Try Supabase Cloud Database (Highest priority)
+    // 1. Try Google Sheets Web App (100% Lifetime Free on Google Drive)
+    if (hasGoogleSheet) {
+      try {
+        const res = await fetch(googleSheetUrl, { cache: 'no-cache' });
+        if (res.ok) {
+          const data = await res.json();
+          const entries = Array.isArray(data) ? data : (data && data.entries ? data.entries : []);
+          if (entries && entries.length > 0) {
+            currentEntries = entries;
+            saveLocalBackup(currentEntries);
+            renderEntries(currentEntries);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Google Sheet fetch error:', err);
+      }
+    }
+
+    // 2. Try Supabase Cloud Database (Optional alternative)
     if (supabase) {
       try {
         const { data, error } = await supabase
@@ -308,7 +343,7 @@ function initGuestbookForm() {
       }
     }
 
-    // 2. Try REST backend server (Render / Express)
+    // 3. Try REST backend server (Render / Express)
     if (API_ENDPOINT) {
       try {
         const res = await fetch(API_ENDPOINT, { cache: 'no-cache' });
@@ -326,7 +361,7 @@ function initGuestbookForm() {
       }
     }
 
-    // 3. Fallback to local backup
+    // 4. Fallback to local backup
     currentEntries = loadLocalBackup();
     renderEntries(currentEntries);
   }
@@ -348,9 +383,9 @@ function initGuestbookForm() {
     }
   }
 
-  // Polling every 15s to keep comments synced across visitors when connected to backend or Supabase
+  // Polling every 15s to keep comments synced across visitors
   setInterval(() => {
-    if (document.visibilityState === 'visible' && (API_ENDPOINT || supabase)) {
+    if (document.visibilityState === 'visible' && (hasGoogleSheet || API_ENDPOINT || supabase)) {
       loadEntries();
     }
   }, 15000);
@@ -378,7 +413,37 @@ function initGuestbookForm() {
     });
 
     try {
-      // 1. Try Supabase Cloud Database (Direct GitHub Pages connection)
+      // 1. Try Google Sheets Web App (100% Lifetime Free on Google Drive)
+      if (hasGoogleSheet) {
+        try {
+          const newEntryPayload = {
+            id: String(Date.now()),
+            name: nameVal,
+            message: msgVal,
+            date: dateStr,
+            likes: 1
+          };
+
+          // Send to Google Apps Script (text/plain avoids CORS preflight)
+          fetch(googleSheetUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(newEntryPayload)
+          }).catch(e => console.warn('Google Sheet background post note:', e));
+
+          showMessage('thanks', 'thank you for signing! ♡');
+          form.reset();
+          currentEntries.unshift(newEntryPayload);
+          saveLocalBackup(currentEntries);
+          renderEntries(currentEntries);
+          return;
+        } catch (err) {
+          console.warn('Google Sheet submission note:', err);
+        }
+      }
+
+      // 2. Try Supabase Cloud Database (Direct GitHub Pages connection)
       if (supabase) {
         try {
           const newEntryPayload = {

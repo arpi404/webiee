@@ -357,17 +357,20 @@
    <p class="small">music  &amp; vocaloid are property of the owmer hehe. this is an personal site.<img src="https://i.imgur.com/m64K8fE.gif" ></p>
 </footer>
 
-<!-- Supabase Cloud Database SDK (Enables 100% free permanent live guestbook sync on GitHub Pages) -->
+<!-- Supabase Cloud Database SDK (Optional alternative) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-  // Paste your Supabase project credentials below to enable live guestbook sync for all visitors:
-  // (See SUPABASE_SETUP.md for simple 2-minute setup instructions)
+  // =========================================================================
+  // 🌟 100% LIFETIME FREE GOOGLE SHEETS GUESTBOOK (RECOMMENDED)
+  // Paste your Google Apps Script Web App URL below (see GOOGLE_SHEETS_SETUP.md):
+  // =========================================================================
+  window.GOOGLE_SHEET_URL = '';
+
+  // Optional alternatives (Supabase or custom Node.js server):
   window.SUPABASE_URL = '';
   window.SUPABASE_ANON_KEY = '';
-
-  // Optional alternative: Node.js Express server URL (e.g. 'https://webiee.onrender.com')
   window.BACKEND_API_URL = '';
 </script>
-<script src="script.js?v=3.0"></script>
+<script src="script.js?v=4.0"></script>
 </body>
 </html>
